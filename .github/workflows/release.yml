@@ -19,7 +19,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      - run: npx electron-builder --mac --publish never
 
       - name: Upload .app to release
         uses: softprops/action-gh-release@v2
