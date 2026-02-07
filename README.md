@@ -21,7 +21,7 @@ Application macOS menu bar pour suivre les Jeux Olympiques d'hiver 2026 de Milan
 ## Installation rapide (macOS Apple Silicon)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yoanbernabeu/JO2026/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yoanbernabeu/JO2026MilanoCortinaAppBar/main/install.sh | bash
 ```
 
 Ce script :
