@@ -469,7 +469,7 @@
     html += '<div class="settings-section">';
     html += '<button class="btn-quit" id="btn-quit">Quitter l\'application</button>';
     html += '</div>';
-    html += '<div class="settings-version">JO 2026 Milano Cortina v1.0.0</div>';
+    html += '<div class="settings-version">JO 2026 Milano Cortina v0.1.0</div>';
 
     view.innerHTML = html;
 
