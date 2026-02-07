@@ -6,9 +6,12 @@
   const SCHEDULE_START = '2026-02-04';
   const SCHEDULE_END = '2026-02-22';
 
+  const CHEVRON_SVG = '<svg class="expand-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4l4 4-4 4"/></svg>';
+
   // State
   let currentTab = 'medals';
   let scheduleDate = getTodayOrDefault();
+  let showFinished = false;
   let medalsData = null;
   let medallistsData = null;
   let scheduleData = null;
@@ -122,7 +125,7 @@
       const ts = await window.jo2026.getLastUpdate();
       if (ts) {
         const d = new Date(ts);
-        $lastUpdate.textContent = 'Derni\u00e8re MAJ : ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        $lastUpdate.textContent = 'MAJ ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
       }
     } catch (_) {}
   }
@@ -180,9 +183,12 @@
       const bronze = totals.bronze ?? entry.bronze ?? 0;
       const total = totals.total ?? entry.total ?? 0;
       const countryName = entry.description || entry.organisationName || entry.organisation;
+      const rank = entry.rank;
+
       html += '<tr class="medal-row" data-detail="' + id + '">';
-      html += '<td>' + entry.rank + '</td>';
-      html += '<td>' + escapeHtml(countryName) + ' <span style="color:var(--text-muted);font-size:11px">(' + entry.organisation + ')</span></td>';
+      html += '<td>' + renderRankBadge(rank) + '</td>';
+      const flag = countryFlag(entry.organisation);
+      html += '<td>' + flag + ' ' + escapeHtml(countryName) + ' <span class="country-code">' + entry.organisation + '</span></td>';
       html += '<td>' + gold + '</td>';
       html += '<td>' + silver + '</td>';
       html += '<td>' + bronze + '</td>';
@@ -202,7 +208,7 @@
           html += '</span></div>';
         });
       } else {
-        html += '<div style="color:var(--text-muted);font-size:12px">Aucun d\u00e9tail par discipline</div>';
+        html += '<div style="color:var(--text-muted);font-size:11px;padding:4px 0">Aucun d\u00e9tail par discipline</div>';
       }
       html += '</div></td></tr>';
     });
@@ -215,19 +221,36 @@
       row.addEventListener('click', () => {
         const detailId = row.dataset.detail;
         const detail = document.getElementById(detailId);
-        detail.classList.toggle('open');
+        const isOpen = detail.classList.toggle('open');
+        row.classList.toggle('expanded', isOpen);
       });
     });
+  }
+
+  function renderRankBadge(rank) {
+    if (rank <= 3) {
+      return '<span class="rank-badge rank-' + rank + '">' + rank + '</span>';
+    }
+    return '<span class="rank-other">' + rank + '</span>';
   }
 
   // --- SCHEDULE VIEW ---
   function renderSchedule() {
     const view = document.getElementById('view-schedule');
+    const today = getToday();
+    const isToday = scheduleDate === today;
+    const todayInRange = today >= SCHEDULE_START && today <= SCHEDULE_END;
 
     let html = '<div class="schedule-nav">';
     html += '<button id="schedule-prev" title="Jour pr\u00e9c\u00e9dent">\u25C0</button>';
     html += '<span class="schedule-date">' + formatDateFR(scheduleDate) + '</span>';
     html += '<button id="schedule-next" title="Jour suivant">\u25B6</button>';
+    if (todayInRange) {
+      html += '<button class="btn-today" id="btn-today"' + (isToday ? ' disabled' : '') + ">Auj.</button>";
+    }
+    html += '</div>';
+    html += '<div class="schedule-filter-bar">';
+    html += '<button class="filter-chip' + (showFinished ? ' active' : '') + '" id="btn-show-finished">Termin\u00e9s</button>';
     html += '</div>';
     html += '<div id="schedule-list"></div>';
 
@@ -247,6 +270,20 @@
       loadScheduleAndRender();
     });
 
+    const btnToday = document.getElementById('btn-today');
+    if (btnToday) {
+      btnToday.addEventListener('click', () => {
+        scheduleDate = today;
+        loadScheduleAndRender();
+      });
+    }
+
+    document.getElementById('btn-show-finished').addEventListener('click', () => {
+      showFinished = !showFinished;
+      document.getElementById('btn-show-finished').classList.toggle('active', showFinished);
+      renderScheduleList();
+    });
+
     renderScheduleList();
   }
 
@@ -255,10 +292,13 @@
     const navDate = view.querySelector('.schedule-date');
     const prevBtn = document.getElementById('schedule-prev');
     const nextBtn = document.getElementById('schedule-next');
+    const btnToday = document.getElementById('btn-today');
+    const today = getToday();
 
     navDate.textContent = formatDateFR(scheduleDate);
     prevBtn.disabled = (scheduleDate <= SCHEDULE_START);
     nextBtn.disabled = (scheduleDate >= SCHEDULE_END);
+    if (btnToday) btnToday.disabled = (scheduleDate === today);
 
     try {
       scheduleData = await window.jo2026.getDailySchedule(scheduleDate);
@@ -276,56 +316,152 @@
       return;
     }
 
-    // Sort by start date
-    const units = [...scheduleData.units].sort((a, b) => {
-      return (a.startDate || '').localeCompare(b.startDate || '');
+    // Filter units whose local date (Europe/Rome) matches the selected schedule date
+    // The API may return UTC dates that fall on a different day in CET
+    const allUnits = [...scheduleData.units].filter(u => {
+      if (!u.startDate) return true;
+      const localDate = new Date(u.startDate).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+      return localDate === scheduleDate;
     });
+    const liveAndScheduled = allUnits
+      .filter(u => u.status !== 'FINISHED')
+      .sort((a, b) => {
+        const aRunning = a.status === 'RUNNING' ? 0 : 1;
+        const bRunning = b.status === 'RUNNING' ? 0 : 1;
+        if (aRunning !== bRunning) return aRunning - bRunning;
+        return (a.startDate || '').localeCompare(b.startDate || '');
+      });
+
+    const finished = allUnits
+      .filter(u => u.status === 'FINISHED')
+      .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+
+    if (liveAndScheduled.length === 0 && !showFinished) {
+      let html = renderEmpty('Tous les \u00e9v\u00e9nements sont termin\u00e9s', '\u2705');
+      html += '<div style="text-align:center;margin-top:-20px">';
+      html += '<button class="filter-chip-inline" id="btn-show-finished-inline">Voir les ' + finished.length + ' termin\u00e9s</button>';
+      html += '</div>';
+      list.innerHTML = html;
+      document.getElementById('btn-show-finished-inline').addEventListener('click', () => {
+        showFinished = true;
+        document.getElementById('btn-show-finished').classList.add('active');
+        renderScheduleList();
+      });
+      return;
+    }
 
     let html = '';
-    units.forEach((unit, i) => {
-      const isMedal = unit.medalEvent === true;
-      const statusClass = getStatusClass(unit.status);
-      const statusLabel = getStatusLabel(unit.status);
-      const time = formatTime(unit.startDate);
+    let idx = 0;
 
-      html += '<div class="schedule-unit' + (isMedal ? ' medal-event' : '') + '" data-unit-idx="' + i + '">';
-      html += '<div class="unit-summary">';
-      html += '<span class="unit-time">' + time + '</span>';
-      html += '<div class="unit-info">';
-      html += '<div class="unit-discipline">' + escapeHtml(unit.disciplineName || '') + '</div>';
-      html += '<div class="unit-event">' + escapeHtml(unit.eventUnitName || unit.eventName || '') + '</div>';
-      html += '</div>';
-      html += '<div class="unit-badge">';
-      if (isMedal) html += '<span class="badge-medal">\uD83C\uDFC5</span>';
-      html += '<span class="badge-status ' + statusClass + '">' + statusLabel + '</span>';
-      html += '</div></div>';
-
-      // Detail
-      html += '<div class="unit-detail" id="unit-detail-' + i + '">';
-      if (unit.venueDescription) {
-        html += '<div class="unit-detail-row"><strong>Lieu :</strong> ' + escapeHtml(unit.venueDescription) + '</div>';
-      }
-      html += '<div class="unit-detail-row"><strong>D\u00e9but :</strong> ' + formatDateTime(unit.startDate) + '</div>';
-      if (unit.endDate && !unit.hideEndDate) {
-        html += '<div class="unit-detail-row"><strong>Fin :</strong> ' + formatDateTime(unit.endDate) + '</div>';
-      }
-      html += '<div class="unit-detail-row"><strong>Statut :</strong> ' + escapeHtml(unit.status || 'N/A') + '</div>';
-      if (unit.phaseName) {
-        html += '<div class="unit-detail-row"><strong>Phase :</strong> ' + escapeHtml(unit.phaseName) + '</div>';
-      }
-      html += '</div></div>';
+    // Live & scheduled
+    liveAndScheduled.forEach((unit) => {
+      html += renderScheduleUnit(unit, idx++);
     });
+
+    // Finished section
+    if (showFinished && finished.length > 0) {
+      html += '<div class="schedule-section-header">Termin\u00e9s &middot; ' + finished.length + '</div>';
+      finished.forEach((unit) => {
+        html += renderScheduleUnit(unit, idx++, true);
+      });
+    }
 
     list.innerHTML = html;
 
     // Toggle details
     list.querySelectorAll('.schedule-unit').forEach(el => {
       el.addEventListener('click', () => {
-        const idx = el.dataset.unitIdx;
-        const detail = document.getElementById('unit-detail-' + idx);
-        detail.classList.toggle('open');
+        const id = el.dataset.unitIdx;
+        const detail = document.getElementById('unit-detail-' + id);
+        const isOpen = detail.classList.toggle('open');
+        el.classList.toggle('expanded', isOpen);
       });
     });
+  }
+
+  function renderScheduleUnit(unit, idx, isFinished) {
+    const isMedal = unit.medalEvent === true;
+    const isRunning = unit.status === 'RUNNING';
+    const statusClass = getStatusClass(unit.status);
+    const statusLabel = getStatusLabel(unit.status);
+    const time = formatTime(unit.startDate);
+    const delay = Math.min(idx * 25, 250);
+
+    let classes = 'schedule-unit';
+    if (isRunning) classes += ' running-event';
+    if (isMedal) classes += ' medal-event';
+    if (isFinished) classes += ' finished-event';
+
+    let html = '<div class="' + classes + '" data-unit-idx="' + idx + '" style="animation-delay:' + delay + 'ms">';
+    html += '<div class="unit-summary">';
+    html += '<span class="unit-time">' + time + '</span>';
+    html += '<div class="unit-info">';
+    html += '<div class="unit-discipline">' + escapeHtml(unit.disciplineName || '') + '</div>';
+    html += '<div class="unit-event">' + escapeHtml(unit.eventUnitName || unit.eventName || '') + '</div>';
+    html += '</div>';
+    html += '<div class="unit-badge">';
+    if (isMedal) html += '<span class="badge-medal">\uD83C\uDFC5</span>';
+    html += '<span class="badge-status ' + statusClass + '">' + statusLabel + '</span>';
+    html += CHEVRON_SVG;
+    html += '</div></div>';
+
+    // Detail + results for finished medal events
+    html += '<div class="unit-detail" id="unit-detail-' + idx + '">';
+    if (unit.venueDescription) {
+      html += '<div class="unit-detail-row"><strong>Lieu :</strong> ' + escapeHtml(unit.venueDescription) + '</div>';
+    }
+    html += '<div class="unit-detail-row"><strong>D\u00e9but :</strong> ' + formatDateTime(unit.startDate) + '</div>';
+    if (unit.endDate && !unit.hideEndDate) {
+      html += '<div class="unit-detail-row"><strong>Fin :</strong> ' + formatDateTime(unit.endDate) + '</div>';
+    }
+    if (unit.phaseName) {
+      html += '<div class="unit-detail-row"><strong>Phase :</strong> ' + escapeHtml(unit.phaseName) + '</div>';
+    }
+
+    // Show medallists for finished medal events
+    if (isFinished && isMedal && medallistsData && medallistsData.athletes) {
+      const results = findMedallists(unit);
+      if (results.length > 0) {
+        html += '<div class="unit-results">';
+        html += '<div class="unit-results-title">R\u00e9sultats</div>';
+        results.forEach(r => {
+          html += '<div class="unit-result-row">';
+          html += '<span class="unit-result-medal">' + getMedalEmoji(r.medalType) + '</span>';
+          html += '<span class="unit-result-name">' + countryFlag(r.country) + ' ' + escapeHtml(r.name) + '</span>';
+          html += '<span class="unit-result-country">' + escapeHtml(r.country) + '</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function findMedallists(unit) {
+    if (!medallistsData || !medallistsData.athletes) return [];
+    const results = [];
+    const eventName = (unit.eventUnitName || unit.eventName || '').toLowerCase();
+    const discipline = (unit.disciplineName || '').toLowerCase();
+
+    medallistsData.athletes.forEach(a => {
+      (a.medals || []).forEach(m => {
+        const mEvent = (m.eventName || '').toLowerCase();
+        const mDisc = (m.disciplineName || '').toLowerCase();
+        if (mDisc === discipline && (mEvent === eventName || eventName.includes(mEvent) || mEvent.includes(eventName))) {
+          results.push({
+            name: a.tvName || a.fullName,
+            country: a.organisation,
+            medalType: m.medalType
+          });
+        }
+      });
+    });
+
+    const medalOrder = { 'ME_GOLD': 0, 'ME_SILVER': 1, 'ME_BRONZE': 2 };
+    results.sort((a, b) => (medalOrder[a.medalType] ?? 3) - (medalOrder[b.medalType] ?? 3));
+    return results;
   }
 
   // --- MEDALLISTS VIEW ---
@@ -372,7 +508,7 @@
     html += '<select id="filter-country"><option value="">Tous pays</option>';
     countries.forEach(c => { html += '<option value="' + escapeAttr(c) + '">' + escapeHtml(c) + '</option>'; });
     html += '</select>';
-    html += '<select id="filter-medal"><option value="">Toutes m\u00e9dailles</option>';
+    html += '<select id="filter-medal"><option value="">Toutes</option>';
     html += '<option value="ME_GOLD">\uD83E\uDD47 Or</option>';
     html += '<option value="ME_SILVER">\uD83E\uDD48 Argent</option>';
     html += '<option value="ME_BRONZE">\uD83E\uDD49 Bronze</option>';
@@ -423,14 +559,17 @@
     let html = '';
     filtered.forEach((m, i) => {
       const emoji = getMedalEmoji(m.medalType);
-      html += '<div class="medallist-card" data-medallist-idx="' + i + '">';
+      const delay = Math.min(i * 25, 250);
+
+      html += '<div class="medallist-card" data-medallist-idx="' + i + '" style="animation-delay:' + delay + 'ms">';
       html += '<div class="medallist-summary">';
       html += '<span class="medallist-medal">' + emoji + '</span>';
       html += '<div class="medallist-info">';
       html += '<div class="medallist-name">' + escapeHtml(m.name) + '</div>';
       html += '<div class="medallist-event-name">' + escapeHtml(m.eventName || '') + '</div>';
       html += '</div>';
-      html += '<span class="medallist-country">' + escapeHtml(m.country) + '</span>';
+      html += '<span class="medallist-country">' + countryFlag(m.country) + ' ' + escapeHtml(m.country) + '</span>';
+      html += CHEVRON_SVG;
       html += '</div>';
 
       // Detail
@@ -452,7 +591,8 @@
       el.addEventListener('click', () => {
         const idx = el.dataset.medallistIdx;
         const detail = document.getElementById('medallist-detail-' + idx);
-        detail.classList.toggle('open');
+        const isOpen = detail.classList.toggle('open');
+        el.classList.toggle('expanded', isOpen);
       });
     });
   }
@@ -464,7 +604,11 @@
     let html = '<div class="settings-title">Param\u00e8tres</div>';
     html += '<div class="settings-section">';
     html += '<div class="settings-row">';
-    html += '<label><input type="checkbox" id="login-item-checkbox"> Lancer au d\u00e9marrage de macOS</label>';
+    html += '<span class="settings-label" id="toggle-label">Lancer au d\u00e9marrage</span>';
+    html += '<label class="toggle-switch">';
+    html += '<input type="checkbox" id="login-item-checkbox">';
+    html += '<span class="toggle-slider"></span>';
+    html += '</label>';
     html += '</div></div>';
     html += '<div class="settings-section">';
     html += '<button class="btn-quit" id="btn-quit">Quitter l\'application</button>';
@@ -483,6 +627,12 @@
       window.jo2026.setLoginItemSettings(checkbox.checked);
     });
 
+    // Toggle label clicks the checkbox
+    document.getElementById('toggle-label').addEventListener('click', () => {
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
+    });
+
     // Quit
     document.getElementById('btn-quit').addEventListener('click', () => {
       window.jo2026.quit();
@@ -499,13 +649,13 @@
   function formatTime(isoStr) {
     if (!isoStr) return '--:--';
     const d = new Date(isoStr);
-    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
   }
 
   function formatDateTime(isoStr) {
     if (!isoStr) return 'N/A';
     const d = new Date(isoStr);
-    return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
   }
 
   function addDays(dateStr, days) {
@@ -547,6 +697,44 @@
 
   function escapeAttr(str) {
     return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Convert ISO 3166-1 alpha-3 country code to flag emoji
+  // Maps 3-letter Olympic codes to 2-letter ISO codes, then to regional indicator symbols
+  const ALPHA3_TO_ALPHA2 = {
+    AFG:'AF',ALB:'AL',ALG:'DZ',AND:'AD',ANG:'AO',ANT:'AG',ARG:'AR',ARM:'AM',ARU:'AW',
+    ASA:'AS',AUS:'AU',AUT:'AT',AZE:'AZ',BAH:'BS',BAN:'BD',BAR:'BB',BDI:'BI',BEL:'BE',
+    BEN:'BJ',BER:'BM',BHU:'BT',BIH:'BA',BIZ:'BZ',BLR:'BY',BOL:'BO',BOT:'BW',BRA:'BR',
+    BRN:'BH',BRU:'BN',BUL:'BG',BUR:'BF',CAF:'CF',CAM:'KH',CAN:'CA',CAY:'KY',CGO:'CG',
+    CHA:'TD',CHI:'CL',CHN:'CN',CIV:'CI',CMR:'CM',COD:'CD',COK:'CK',COL:'CO',COM:'KM',
+    CPV:'CV',CRC:'CR',CRO:'HR',CUB:'CU',CYP:'CY',CZE:'CZ',DEN:'DK',DJI:'DJ',DMA:'DM',
+    DOM:'DO',ECU:'EC',EGY:'EG',ERI:'ER',ESA:'SV',ESP:'ES',EST:'EE',ETH:'ET',FIJ:'FJ',
+    FIN:'FI',FRA:'FR',FSM:'FM',GAB:'GA',GAM:'GM',GBR:'GB',GBS:'GW',GEO:'GE',GEQ:'GQ',
+    GER:'DE',GHA:'GH',GRE:'GR',GRN:'GD',GUA:'GT',GUI:'GN',GUM:'GU',GUY:'GY',HAI:'HT',
+    HKG:'HK',HON:'HN',HUN:'HU',INA:'ID',IND:'IN',IRI:'IR',IRL:'IE',IRQ:'IQ',ISL:'IS',
+    ISR:'IL',ISV:'VI',ITA:'IT',IVB:'VG',JAM:'JM',JOR:'JO',JPN:'JP',KAZ:'KZ',KEN:'KE',
+    KGZ:'KG',KIR:'KI',KOR:'KR',KOS:'XK',KSA:'SA',KUW:'KW',LAO:'LA',LAT:'LV',LBA:'LY',
+    LBN:'LB',LBR:'LR',LCA:'LC',LES:'LS',LIE:'LI',LTU:'LT',LUX:'LU',MAD:'MG',MAR:'MA',
+    MAS:'MY',MAW:'MW',MDA:'MD',MDV:'MV',MEX:'MX',MGL:'MN',MHL:'MH',MKD:'MK',MLI:'ML',
+    MLT:'MT',MNE:'ME',MON:'MC',MOZ:'MZ',MRI:'MU',MTN:'MR',MYA:'MM',NAM:'NA',NCA:'NI',
+    NED:'NL',NEP:'NP',NGR:'NG',NIG:'NE',NOR:'NO',NRU:'NR',NZL:'NZ',OMA:'OM',PAK:'PK',
+    PAN:'PA',PAR:'PY',PER:'PE',PHI:'PH',PLE:'PS',PLW:'PW',PNG:'PG',POL:'PL',POR:'PT',
+    PRK:'KP',PUR:'PR',QAT:'QA',ROU:'RO',RSA:'ZA',RUS:'RU',RWA:'RW',SAM:'WS',SEN:'SN',
+    SEY:'SC',SIN:'SG',SKN:'KN',SLE:'SL',SLO:'SI',SMR:'SM',SOL:'SB',SOM:'SO',SRB:'RS',
+    SRI:'LK',STP:'ST',SUD:'SD',SUI:'CH',SUR:'SR',SVK:'SK',SWE:'SE',SWZ:'SZ',SYR:'SY',
+    TAN:'TZ',TGA:'TO',THA:'TH',TJK:'TJ',TKM:'TM',TLS:'TL',TOG:'TG',TPE:'TW',TTO:'TT',
+    TUN:'TN',TUR:'TR',TUV:'TV',UAE:'AE',UGA:'UG',UKR:'UA',URU:'UY',USA:'US',UZB:'UZ',
+    VAN:'VU',VEN:'VE',VIE:'VN',VIN:'VC',YEM:'YE',ZAM:'ZM',ZIM:'ZW',
+    AIN:'UN',EOR:'UN',ROC:'RU',OAR:'UN'
+  };
+
+  function countryFlag(code) {
+    if (!code) return '';
+    const alpha2 = ALPHA3_TO_ALPHA2[code.toUpperCase()];
+    if (!alpha2) return '';
+    return String.fromCodePoint(
+      ...[...alpha2].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+    );
   }
 
   function renderEmpty(msg, icon) {
