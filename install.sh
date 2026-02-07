@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="JO 2026"
-REPO="yoanbernabeu/JO2026"
+REPO="yoanbernabeu/JO2026MilanoCortinaAppBar"
 INSTALL_DIR="/Applications"
 TMP_DIR=$(mktemp -d)
 
@@ -37,14 +37,22 @@ curl -fsSL -o "${TMP_DIR}/app.zip" "$DOWNLOAD_URL"
 echo "==> Decompression..."
 unzip -q "${TMP_DIR}/app.zip" -d "${TMP_DIR}"
 
-# 5. Copier dans /Applications
-echo "==> Installation dans ${INSTALL_DIR}..."
-cp -R "${TMP_DIR}/${APP_NAME}.app" "${INSTALL_DIR}/"
+# 5. Trouver le .app dans l'archive
+APP_PATH=$(find "$TMP_DIR" -name "*.app" -maxdepth 2 -type d | head -1)
+if [ -z "$APP_PATH" ]; then
+  echo "Erreur : aucun .app trouve dans l'archive."
+  exit 1
+fi
+ACTUAL_APP_NAME=$(basename "$APP_PATH")
 
-# 6. Retirer la quarantaine (application non signee)
+# 6. Copier dans /Applications
+echo "==> Installation dans ${INSTALL_DIR}..."
+cp -R "$APP_PATH" "${INSTALL_DIR}/"
+
+# 7. Retirer la quarantaine (application non signee)
 echo "==> Retrait de la quarantaine macOS..."
-xattr -cr "${INSTALL_DIR}/${APP_NAME}.app"
+xattr -cr "${INSTALL_DIR}/${ACTUAL_APP_NAME}"
 
 echo ""
-echo "==> ${APP_NAME} installe avec succes !"
-echo "    Vous pouvez le lancer depuis ${INSTALL_DIR}/${APP_NAME}.app"
+echo "==> ${ACTUAL_APP_NAME%.app} installe avec succes !"
+echo "    Vous pouvez le lancer depuis ${INSTALL_DIR}/${ACTUAL_APP_NAME}"
