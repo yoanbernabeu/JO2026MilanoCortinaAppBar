@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>JO 2026 Milano Cortina</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Off-season message -->
+    <div id="off-season" class="off-season" style="display:none;">
+      <div class="off-season-content">
+        <div class="off-season-icon">&#10052;</div>
+        <p id="off-season-text"></p>
+      </div>
+    </div>
+
+    <!-- Main app (hidden off-season) -->
+    <div id="main-app" style="display:none;">
+      <!-- Tab bar -->
+      <nav class="tab-bar">
+        <button class="tab active" data-tab="medals">M&#233;dailles</button>
+        <button class="tab" data-tab="schedule">Programme</button>
+        <button class="tab" data-tab="medallists">M&#233;daill&#233;s</button>
+        <button class="tab tab-settings" data-tab="settings" title="Param&#232;tres">&#9881;</button>
+      </nav>
+
+      <!-- Content area -->
+      <div id="content" class="content">
+        <div id="view-medals" class="view active"></div>
+        <div id="view-schedule" class="view"></div>
+        <div id="view-medallists" class="view"></div>
+        <div id="view-settings" class="view"></div>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <button id="btn-refresh" class="btn-refresh" title="Actualiser">&#128260; Actualiser</button>
+        <span id="last-update" class="last-update">--</span>
+      </footer>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Chargement...</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

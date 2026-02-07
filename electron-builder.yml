@@ -1,0 +1,11 @@
+appId: com.yoandev.jo2026
+productName: JO 2026
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+  category: public.app-category.sports
+files:
+  - src/**/*
+  - package.json

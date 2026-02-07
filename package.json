@@ -1,0 +1,17 @@
+{
+  "name": "jo2026-menubar",
+  "version": "1.0.0",
+  "description": "Menu bar app pour suivre les JO 2026 Milano Cortina",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "dependencies": {
+    "menubar": "^9.5.0"
+  }
+}

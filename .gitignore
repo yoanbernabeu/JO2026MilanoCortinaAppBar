@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.dmg
+httpie.json
+.DS_Store
